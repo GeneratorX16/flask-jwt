@@ -1,0 +1,16 @@
+- Ability for a user to create posts using markdown editor/ rich style
+- Title can ba only in one format
+- Posts can be liked and disliked
+- Posts can be "shown less" from a specific user
+- Posts explore page
+- Posts the people you follow interacted with
+-
+
+
+{
+  "username": "auth_test_1",
+  "password": "password",
+  "first_name": "auth_user1",
+  "last_name": "test",
+  "email": "auth_test_user1@test.com"
+}
