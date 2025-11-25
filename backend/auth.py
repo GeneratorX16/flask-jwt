@@ -1,6 +1,8 @@
+from utils import get_redis_connector
 from db import User
 from flask import Blueprint, jsonify, request
 from functools import wraps
+from uuid import uuid4
 
 import bcrypt
 import jwt
@@ -9,12 +11,13 @@ from datetime import datetime, timedelta, timezone
 
 SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 1
+ACCESS_TOKEN_EXPIRE_MINUTES = 15
 
 auth_api = Blueprint("auth", __name__, url_prefix="/auth")
 SALT = bcrypt.gensalt()
+UNAUTH_MESSAGE = "Unauthorized", 403
 
-AUTH_ERROR_MESSAGE = "Unauthorized", 403
+r = get_redis_connector()
 
 def get_user_from_db(username):
     return User.query.where(User.username == username).first()
@@ -34,11 +37,23 @@ def authenticate_user(username, received_password):
 
 def generate_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode = data.copy()
+    iat = datetime.now(timezone.utc)
+    cid = str(uuid4())
+
     if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
+        expire = iat + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=15)
-    to_encode.update({"exp": expire})
+        expire = iat + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+
+    to_encode.update({
+        "exp": expire, 
+        "cid": cid,
+        "iat": iat
+    })
+
+    r.set(to_encode["sub"], cid)
+    r.expire(to_encode["sub"], ACCESS_TOKEN_EXPIRE_MINUTES*60)
+
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
@@ -46,8 +61,17 @@ def get_current_user(token: str):
     try: 
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username = payload.get("sub")
-        if username is None:
+        actual_cid = payload.get("cid")
+        expected_cid = str(r.get(username))
+        
+        if username is None: 
+            print("cid not valid")
             return None
+        
+        if actual_cid != expected_cid:
+            print(f"cid did not match, login again. Received {actual_cid}, expected {expected_cid}")
+            return None
+        
     except jwt.InvalidTokenError:
         return None
     user = get_user_from_db(username)
@@ -70,11 +94,10 @@ def auth_protected(fun):
         current_user = get_logged_in_user()
 
         if not current_user:
-            return AUTH_ERROR_MESSAGE
+            return UNAUTH_MESSAGE
         print("Got a valid user " + current_user.username)
         return fun(*args, **kwargs)
     return foo
-
 
 @auth_api.get("/check")
 def check():
@@ -88,7 +111,7 @@ def login():
     user = authenticate_user(username, password)
 
     if not user:
-        return AUTH_ERROR_MESSAGE
+        return UNAUTH_MESSAGE
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = generate_access_token(
         data={"sub": user.username}, expires_delta=access_token_expires
@@ -96,13 +119,25 @@ def login():
     
     return jsonify({"access_token": access_token, "token_type": "bearer"})
 
+def revoke_token(username: str):
+    r.set(username, str(uuid4()))
+    r.expire(username, ACCESS_TOKEN_EXPIRE_MINUTES)
+
+@auth_api.post("/revoke")
+def revoke_jwt_token():
+    u = request.args.get("u")
+
+    if not u:
+        return "Invalid request", 400
+    
+    revoke_token(u)
+    return "revoked", 200
 
 @auth_api.get("/whoami")
 def whoami():
     user = get_logged_in_user()
     if not user:
-        return AUTH_ERROR_MESSAGE
+        return UNAUTH_MESSAGE
     return user.username
-
 
 

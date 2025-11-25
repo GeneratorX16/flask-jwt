@@ -14,3 +14,6 @@
   "last_name": "test",
   "email": "auth_test_user1@test.com"
 }
+
+JWT flow:
+- user logs in -> cid is generated for the user and stored with redis -> 

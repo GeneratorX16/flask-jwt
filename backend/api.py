@@ -4,13 +4,13 @@ from auth import auth_protected, generate_password_hash
 from db import User, Post, db
 
 
-blueprint = Blueprint('api', __name__)
+content_api = Blueprint('api', __name__)
 
-@blueprint.get("/users")
+@content_api.get("/users")
 def get_user():
     return jsonify([{"username": user.username, "password": user.password, "email": user.email, "created_at": user.created_at} for user in User.query.all()])
 
-@blueprint.post("/user")
+@content_api.post("/user")
 def add_user():
     data = request.get_json()
     try: 
@@ -24,11 +24,11 @@ def add_user():
 
 
 # everything related with posts
-@blueprint.route("/check")
+@content_api.route("/check")
 def check_app():
     return "success", 201
 
-@blueprint.get("/post")
+@content_api.get("/post")
 @auth_protected
 def get_posts():
     q = request.args.get('q')
@@ -44,7 +44,7 @@ def get_posts():
 
     return jsonify(result)
 
-@blueprint.get("/post/<uuid:id>")
+@content_api.get("/post/<uuid:id>")
 def get_post_by_id(id):
     post = Post.query.where(Post.id == id).all()
 
@@ -53,7 +53,7 @@ def get_post_by_id(id):
     
     return "Resource not found", 404
 
-@blueprint.post("/post/create")
+@content_api.post("/post/create")
 def create_post():
     data = request.get_json()
     new_post = Post(**data)
