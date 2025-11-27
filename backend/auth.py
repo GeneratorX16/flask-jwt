@@ -1,3 +1,4 @@
+import math
 from utils import get_redis_connector
 from db import User
 from flask import Blueprint, jsonify, request
@@ -38,7 +39,7 @@ def authenticate_user(username, received_password):
 def generate_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode = data.copy()
     iat = datetime.now(timezone.utc)
-    cid = str(uuid4())
+    jti = str(uuid4())
 
     if expires_delta:
         expire = iat + expires_delta
@@ -47,12 +48,9 @@ def generate_access_token(data: dict, expires_delta: timedelta | None = None):
 
     to_encode.update({
         "exp": expire, 
-        "cid": cid,
+        "jti": jti,
         "iat": iat
     })
-
-    r.set(to_encode["sub"], cid)
-    r.expire(to_encode["sub"], ACCESS_TOKEN_EXPIRE_MINUTES*60)
 
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
@@ -61,15 +59,12 @@ def get_current_user(token: str):
     try: 
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username = payload.get("sub")
-        actual_cid = payload.get("cid")
-        expected_cid = str(r.get(username))
+        jti = payload.get("jti")
+        jti_is_blacklisted = bool(r.get(jti))
+        print(payload.get("exp"))
+        print(datetime.fromtimestamp(payload.get("exp")))
         
-        if username is None: 
-            print("cid not valid")
-            return None
-        
-        if actual_cid != expected_cid:
-            print(f"cid did not match, login again. Received {actual_cid}, expected {expected_cid}")
+        if username is None or jti_is_blacklisted: 
             return None
         
     except jwt.InvalidTokenError:
@@ -95,7 +90,6 @@ def auth_protected(fun):
 
         if not current_user:
             return UNAUTH_MESSAGE
-        print("Got a valid user " + current_user.username)
         return fun(*args, **kwargs)
     return foo
 
@@ -119,18 +113,28 @@ def login():
     
     return jsonify({"access_token": access_token, "token_type": "bearer"})
 
-def revoke_token(username: str):
-    r.set(username, str(uuid4()))
-    r.expire(username, ACCESS_TOKEN_EXPIRE_MINUTES)
+def revoke_token(token: str):
+    try: 
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        jti = payload.get("jti")
+        exp_ttl: timedelta = datetime.fromtimestamp(payload.get("exp"), tz=timezone.utc) - datetime.now(timezone.utc)
+
+        if exp_ttl.total_seconds() > 0:
+            print(f"Setting in redis: {exp_ttl.total_seconds() }")
+            r.setex(jti, math.ceil(exp_ttl.total_seconds()), b"True")
+        
+    except jwt.InvalidTokenError:
+        return False
+    return True
 
 @auth_api.post("/revoke")
 def revoke_jwt_token():
-    u = request.args.get("u")
+    token = request.args.get("token")
 
-    if not u:
+    if not token:
         return "Invalid request", 400
     
-    revoke_token(u)
+    revoke_token(token)
     return "revoked", 200
 
 @auth_api.get("/whoami")
