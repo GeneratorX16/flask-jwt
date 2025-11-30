@@ -30,3 +30,4 @@ build/
 # Sensitive information (e.g., API keys, passwords)
 config.ini
 .env
+.db

@@ -1,26 +1,14 @@
 from flask import jsonify, Blueprint, request
-from sqlalchemy.exc import IntegrityError
-from auth import auth_protected, generate_password_hash
+from auth import auth_protected
 from db import User, Post, db
+from flask_cors import cross_origin
 
 
-content_api = Blueprint('api', __name__)
+content_api = Blueprint('api', __name__, url_prefix="/content")
 
 @content_api.get("/users")
 def get_user():
     return jsonify([{"username": user.username, "password": user.password, "email": user.email, "created_at": user.created_at} for user in User.query.all()])
-
-@content_api.post("/user")
-def add_user():
-    data = request.get_json()
-    try: 
-        new_user = User(**data)
-        new_user.password = generate_password_hash(new_user.password)
-        db.session.add(new_user)
-        db.session.commit()
-    except IntegrityError:
-        return jsonify({"error": "User with similar username or email already exists"}), 400
-    return f"an email has been sent to {new_user.email} for user {new_user.username}, please verify it", 201
 
 
 # everything related with posts
@@ -30,17 +18,17 @@ def check_app():
 
 @content_api.get("/post")
 @auth_protected
-def get_posts():
+def get_posts(current_user: User):
     q = request.args.get('q')
     posts = Post.query
-    print("Query found: " + (q or "e"))
+
     if q:
         print("Applying query")
-        posts = posts.filter(Post.title.ilike(f"%{q}%"))
+        posts = posts.filter(Post.title.ilike(f"%{q}%")).filter(Post.author_id == current_user.id)
 
     result = []
     for post in posts.all():
-        result.append({"id": post.id, "title": post.title, "content": post.content, "created_at": post.created_at})
+        result.append({"id": post.id, "title": post.title, "content": post.content, "created_at": post.created_at, "author": post.author.username})
 
     return jsonify(result)
 
@@ -54,8 +42,11 @@ def get_post_by_id(id):
     return "Resource not found", 404
 
 @content_api.post("/post/create")
-def create_post():
+@cross_origin()
+@auth_protected
+def create_post(current_user: User):
     data = request.get_json()
+    data["author_id"] = current_user.id
     new_post = Post(**data)
     try:
         db.session.add(new_post)

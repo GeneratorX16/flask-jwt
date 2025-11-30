@@ -1,6 +1,14 @@
+import dotenv
+import os
+
+from flask_cors import cross_origin
+dotenv.load_dotenv()
+
+from enum import StrEnum
 import math
 from utils import get_redis_connector
-from db import User
+from db import User, db
+from sqlalchemy.exc import IntegrityError
 from flask import Blueprint, jsonify, request
 from functools import wraps
 from uuid import uuid4
@@ -9,14 +17,21 @@ import bcrypt
 import jwt
 from datetime import datetime, timedelta, timezone
 
-
-SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
+SECRET_KEY= os.environ.get('JWT_SECRET_KEY')
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 15
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
 
 auth_api = Blueprint("auth", __name__, url_prefix="/auth")
-SALT = bcrypt.gensalt()
-UNAUTH_MESSAGE = "Unauthorized", 403
+
+
+class AuthMessage(StrEnum):
+    UNAUTH_MESSAGE = "Unauthorized"
+    TOKEN_EXPIRED = "your auth token has expired"
+    TOKEN_REVOKED = "auth token revoked"
+    INVALID_TOKEN = "invalid auth token provided"
+    INVALID_CREDENTIALS = "invalid credentials"
+
 
 r = get_redis_connector()
 
@@ -24,14 +39,14 @@ def get_user_from_db(username):
     return User.query.where(User.username == username).first()
 
 def generate_password_hash(password: str):
-    return bcrypt.hashpw(password.encode("utf-8"), SALT).decode("utf-8")
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 def authenticate_user(username, received_password):
     if not username or not received_password:
         return False
     
     user = get_user_from_db(username)
-    if not username or not bcrypt.checkpw(received_password, user.password.encode("utf-8")):
+    if not user or not bcrypt.checkpw(received_password.encode("utf-8"), user.password.encode("utf-8")):
         return False
     
     return user
@@ -55,22 +70,6 @@ def generate_access_token(data: dict, expires_delta: timedelta | None = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-def get_current_user(token: str):
-    try: 
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username = payload.get("sub")
-        jti = payload.get("jti")
-        jti_is_blacklisted = bool(r.get(jti))
-        print(payload.get("exp"))
-        print(datetime.fromtimestamp(payload.get("exp")))
-        
-        if username is None or jti_is_blacklisted: 
-            return None
-        
-    except jwt.InvalidTokenError:
-        return None
-    user = get_user_from_db(username)
-    return user
 
 def get_logged_in_user():
     auth_header = request.headers.get('Authorization')
@@ -79,33 +78,57 @@ def get_logged_in_user():
         jwt_token = auth_header.split(' ')[1]
 
     if not jwt_token:
-        return None
+        raise ValueError(AuthMessage.UNAUTH_MESSAGE)
+        
+    try: 
+        payload = jwt.decode(jwt_token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        jti = payload.get("jti")
+        jti_is_blacklisted = bool(r.get(jti))
+
+        if username is None or jti_is_blacklisted: 
+           raise ValueError(AuthMessage.TOKEN_EXPIRED)
+        
+    except jwt.InvalidTokenError:
+        raise ValueError(AuthMessage.INVALID_TOKEN)
     
-    return get_current_user(jwt_token)
+    user = get_user_from_db(username)
+    return user
 
 def auth_protected(fun):
     @wraps(fun)
     def foo(*args, **kwargs):
-        current_user = get_logged_in_user()
-
-        if not current_user:
-            return UNAUTH_MESSAGE
-        return fun(*args, **kwargs)
+        current_user = None
+        try:
+            current_user = get_logged_in_user()
+        except ValueError as e:
+            msg = str(e)
+            if AuthMessage.INVALID_CREDENTIALS in msg or AuthMessage.INVALID_TOKEN in msg or AuthMessage.TOKEN_EXPIRED in msg or AuthMessage.TOKEN_REVOKED in msg or AuthMessage.UNAUTH_MESSAGE in msg:
+                return msg, 403
+            else:
+                raise e
+        
+        return fun(current_user = current_user, *args, **kwargs)
     return foo
+
+
+# routes start from here
 
 @auth_api.get("/check")
 def check():
-    return "auth is active", 200
+    return "auth service is up", 200
 
 @auth_api.post("/login")
+@cross_origin()
 def login():
     username = request.json.get("username")
-    password = request.json.get("password").encode("utf-8")
+    password = request.json.get("password")
 
     user = authenticate_user(username, password)
 
     if not user:
-        return UNAUTH_MESSAGE
+        return AuthMessage.INVALID_CREDENTIALS, 401
+    
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = generate_access_token(
         data={"sub": user.username}, expires_delta=access_token_expires
@@ -120,7 +143,6 @@ def revoke_token(token: str):
         exp_ttl: timedelta = datetime.fromtimestamp(payload.get("exp"), tz=timezone.utc) - datetime.now(timezone.utc)
 
         if exp_ttl.total_seconds() > 0:
-            print(f"Setting in redis: {exp_ttl.total_seconds() }")
             r.setex(jti, math.ceil(exp_ttl.total_seconds()), b"True")
         
     except jwt.InvalidTokenError:
@@ -132,16 +154,27 @@ def revoke_jwt_token():
     token = request.args.get("token")
 
     if not token:
-        return "Invalid request", 400
+        return AuthMessage.INVALID_TOKEN, 400
     
     revoke_token(token)
-    return "revoked", 200
+    return AuthMessage.TOKEN_REVOKED, 200
+
+@auth_api.post("/user")
+def add_user():
+    data = request.get_json()
+    try: 
+        new_user = User(**data)
+        new_user.password = generate_password_hash(new_user.password)
+        db.session.add(new_user)
+        db.session.commit()
+    except IntegrityError:
+        return jsonify({"error": "User with similar username or email already exists"}), 400
+    return f"an email has been sent to {new_user.email} for user {new_user.username}, please verify it", 201
 
 @auth_api.get("/whoami")
-def whoami():
-    user = get_logged_in_user()
-    if not user:
-        return UNAUTH_MESSAGE
-    return user.username
+@auth_protected
+def whoami(current_user):
+    return current_user.username
+    
 
 
