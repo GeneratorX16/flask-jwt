@@ -3,12 +3,13 @@ export function m(...args: string[]) {
 }
 
 export function clsx(...args: ({[key: string]: boolean} | string)[]) {
-    let finalClass = "";
+    const finalClass: string[] = [];
     for (const arg of args) {
         if (typeof(arg) === "string") {
-            finalClass += arg.trim();
+            finalClass.push(arg.trim());
         } else {
-            finalClass += Object.keys(arg).filter(k => arg[k]).map(k => k.trim()).join(" ");
+            finalClass.push(Object.keys(arg).filter(k => arg[k]).map(k => k.trim()).join(" "))
         }
     }
+    return finalClass.join(" ");
 }

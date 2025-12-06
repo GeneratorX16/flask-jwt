@@ -4,9 +4,10 @@ import React from "react";
 import {User, KeyRound} from"lucide-react";
 import { Plus_Jakarta_Sans } from 'next/font/google'
 import CustomInput from "@/components/input";
-import { m } from "@/lib/utils";
+import { clsx, m } from "@/lib/utils";
 import { CustomEnv } from "@/env";
 import LoadingSpinner from "@/components/loader";
+import { redirect } from "next/navigation";
 
 const inter = Plus_Jakarta_Sans({ subsets: ['latin'] })
 
@@ -16,7 +17,7 @@ export default function LoginForm() {
     const [isLoading, setIsLoading] = React.useState(false);
     const [formError, setFormError] = React.useState(false);
     
-    async function handleSubmit(e: React.MouseEvent<HTMLFormElement, MouseEvent>) {
+    async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
 
         setIsLoading(true);
@@ -28,13 +29,14 @@ export default function LoginForm() {
             body: JSON.stringify(formData)
         });
 
+        setIsLoading(false);
         if (!res.ok) {
             setFormError(true);
         } else {
             setFormError(false);
-            console.log("Login successfull")
-        }
-        
+            localStorage.setItem("jwtToken", (await res.json())["token"]);
+            redirect("/home");
+        } 
     }
 
     return (
@@ -44,17 +46,22 @@ export default function LoginForm() {
                 <div className="flex flex-row bg-gray-100 text-gray-600 border-b border-b-gray-300 focus-within:border-b-black transition duration-500 ease-in-out py-0.5 px-0.5 w-full max-w-sm">
                     <User className="text-gray-500 mr-1 ml-1"/>
                     <CustomInput type="text" value={formData.username} placeholder="Username"
-                     onChange={(e) => setformData({...formData, username: e.currentTarget.value})} className="border-none" required/>
+                     onChange={(e) => setformData({...formData, username: e.currentTarget.value})} className={clsx("border-none", {"opacity-50": isLoading})} required disabled={isLoading}/>
                 </div>
                 <div className="flex flex-row bg-gray-100 text-gray-600 border-b border-b-gray-300 focus-within:border-b-black transition duration-500 ease-in-out py-0.5 px-0.5 w-full max-w-sm">
                     <KeyRound className="text-gray-500 mr-1 ml-1"/>
                     <CustomInput type="password" value={formData.password} placeholder="Password"
-                    onChange={(e) => setformData({...formData, password: e.currentTarget.value})} className="border-none" required/>
+                    onChange={(e) => setformData({...formData, password: e.currentTarget.value})} className={clsx("border-none", {"opacity-50": isLoading})} required disabled={isLoading}/>
                 </div>
-                <button type="submit" className="bg-black text-white px-1 py-1 w-full font-bold hover:cursor-pointer">Login</button>
+                {isLoading ? (
+                <div className="w-full flex justify-center py-2">
+                    <LoadingSpinner dim="30"/>
+                </div>
+            ) : (
+                <button type="submit" className="bg-black text-white px-4 py-2 w-full font-bold hover:cursor-pointer rounded">Login</button>
+            )}
             </form>
             {formError && <span className="text-red-500 absolute bottom-4 left-0 right-0 text-center">{"username or password incorrect"}</span>}
-            <LoadingSpinner />
         </div>
     )
 }

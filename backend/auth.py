@@ -9,7 +9,7 @@ import math
 from utils import get_redis_connector
 from db import User, db
 from sqlalchemy.exc import IntegrityError
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
 from functools import wraps
 from uuid import uuid4
 
@@ -73,11 +73,9 @@ def generate_access_token(data: dict, expires_delta: timedelta | None = None):
 
 def get_logged_in_user():
     auth_header = request.headers.get('Authorization')
-    jwt_token = None
-    if auth_header and auth_header.startswith('Bearer '):
-        jwt_token = auth_header.split(' ')[1]
+    jwt_token = auth_header.split(" ")[1]
 
-    if not jwt_token:
+    if not auth_header.startswith("Bearer") or not jwt_token:
         raise ValueError(AuthMessage.UNAUTH_MESSAGE)
         
     try: 
@@ -119,7 +117,7 @@ def check():
     return "auth service is up", 200
 
 @auth_api.post("/login")
-@cross_origin()
+@cross_origin(supports_credentials=True)
 def login():
     username = request.json.get("username")
     password = request.json.get("password")
@@ -134,7 +132,7 @@ def login():
         data={"sub": user.username}, expires_delta=access_token_expires
     )
     
-    return jsonify({"access_token": access_token, "token_type": "bearer"})
+    return jsonify({"token": access_token}), 200
 
 def revoke_token(token: str):
     try: 
@@ -172,6 +170,7 @@ def add_user():
     return f"an email has been sent to {new_user.email} for user {new_user.username}, please verify it", 201
 
 @auth_api.get("/whoami")
+@cross_origin(supports_credentials=True)
 @auth_protected
 def whoami(current_user):
     return current_user.username
