@@ -1,5 +1,10 @@
+import WelcomeBanner from "@/ui/home/welcome-banner";
+
 export default function Home() {
+    
     return (
-        <h1>Home</h1>
+        <div className="h-screen w-screen flex flex-col justify-center items-center">
+            <WelcomeBanner/>
+        </div>
     )
 }

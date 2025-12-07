@@ -1,3 +1,3 @@
 export class CustomEnv {
-    public static  BACKEND_BASE_URL="http://localhost:5000";
+    public static  BACKEND_BASE_URL="http://127.0.0.1:5000";
 }

@@ -1,26 +1,51 @@
 "use client";
 
 import React from "react";
-import {User, KeyRound} from"lucide-react";
+import { User, KeyRound } from "lucide-react";
 import { Plus_Jakarta_Sans } from 'next/font/google'
 import CustomInput from "@/components/input";
 import { clsx, m } from "@/lib/utils";
 import { CustomEnv } from "@/env";
 import LoadingSpinner from "@/components/loader";
 import { redirect } from "next/navigation";
+import { AUTH_CONSTANTS } from "@/lib/constants";
 
 const inter = Plus_Jakarta_Sans({ subsets: ['latin'] })
 
 
 export default function LoginForm() {
-    const [formData, setformData] = React.useState({username: "", password: ""});
+    const [formData, setformData] = React.useState({ username: "", password: "" });
     const [isLoading, setIsLoading] = React.useState(false);
     const [formError, setFormError] = React.useState(false);
-    
+
+    React.useEffect(() => {
+        async function checkLoggedInUser() {
+            const token = localStorage.getItem(AUTH_CONSTANTS.tokenName);
+
+            if (token) {
+                const res = await fetch(CustomEnv.BACKEND_BASE_URL + "/auth/whoami", {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                });
+
+                if (res.ok) {
+                    redirect("/home");
+                }
+            }
+        }
+
+        checkLoggedInUser();
+    }, [])
+
+
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
 
         setIsLoading(true);
+
         const res = await fetch(CustomEnv.BACKEND_BASE_URL + "/auth/login", {
             method: 'POST',
             headers: {
@@ -34,9 +59,9 @@ export default function LoginForm() {
             setFormError(true);
         } else {
             setFormError(false);
-            localStorage.setItem("jwtToken", (await res.json())["token"]);
+            localStorage.setItem(AUTH_CONSTANTS.tokenName, (await res.json())["token"]);
             redirect("/home");
-        } 
+        }
     }
 
     return (
@@ -44,22 +69,22 @@ export default function LoginForm() {
             <form onSubmit={(e) => handleSubmit(e)} className="flex flex-col justify-center items-center gap-5 w-full max-w-sm">
                 <h1 className="text-2xl font-extrabold">Account Login</h1>
                 <div className="flex flex-row bg-gray-100 text-gray-600 border-b border-b-gray-300 focus-within:border-b-black transition duration-500 ease-in-out py-0.5 px-0.5 w-full max-w-sm">
-                    <User className="text-gray-500 mr-1 ml-1"/>
+                    <User className="text-gray-500 mr-1 ml-1" />
                     <CustomInput type="text" value={formData.username} placeholder="Username"
-                     onChange={(e) => setformData({...formData, username: e.currentTarget.value})} className={clsx("border-none", {"opacity-50": isLoading})} required disabled={isLoading}/>
+                        onChange={(e) => setformData({ ...formData, username: e.currentTarget.value })} className={clsx("border-none", { "opacity-50": isLoading })} required disabled={isLoading} />
                 </div>
                 <div className="flex flex-row bg-gray-100 text-gray-600 border-b border-b-gray-300 focus-within:border-b-black transition duration-500 ease-in-out py-0.5 px-0.5 w-full max-w-sm">
-                    <KeyRound className="text-gray-500 mr-1 ml-1"/>
+                    <KeyRound className="text-gray-500 mr-1 ml-1" />
                     <CustomInput type="password" value={formData.password} placeholder="Password"
-                    onChange={(e) => setformData({...formData, password: e.currentTarget.value})} className={clsx("border-none", {"opacity-50": isLoading})} required disabled={isLoading}/>
+                        onChange={(e) => setformData({ ...formData, password: e.currentTarget.value })} className={clsx("border-none", { "opacity-50": isLoading })} required disabled={isLoading} />
                 </div>
                 {isLoading ? (
-                <div className="w-full flex justify-center py-2">
-                    <LoadingSpinner dim="30"/>
-                </div>
-            ) : (
-                <button type="submit" className="bg-black text-white px-4 py-2 w-full font-bold hover:cursor-pointer rounded">Login</button>
-            )}
+                    <div className="w-full flex justify-center py-2">
+                        <LoadingSpinner dim="30" />
+                    </div>
+                ) : (
+                    <button type="submit" className="bg-black text-white px-4 py-2 w-full font-bold hover:cursor-pointer rounded">Login</button>
+                )}
             </form>
             {formError && <span className="text-red-500 absolute bottom-4 left-0 right-0 text-center">{"username or password incorrect"}</span>}
         </div>
