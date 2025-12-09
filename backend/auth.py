@@ -110,14 +110,15 @@ def get_logged_in_user():
     except jwt.InvalidTokenError:
         raise ValueError(AuthMessage.INVALID_TOKEN)
     
-    return username
+    user = get_user_from_db(username)
+    return user
 
 def auth_protected(fun):
     @wraps(fun)
     def foo(*args, **kwargs):
-        current_user_username = None
+        current_user = None
         try:
-            current_user_username = get_logged_in_user()
+            current_user = get_logged_in_user()
         except ValueError as e:
             msg = str(e)
             if AuthMessage.INVALID_CREDENTIALS in msg or AuthMessage.INVALID_TOKEN in msg or AuthMessage.TOKEN_EXPIRED in msg or AuthMessage.TOKEN_REVOKED in msg or AuthMessage.UNAUTH_MESSAGE in msg:
@@ -125,7 +126,7 @@ def auth_protected(fun):
             else:
                 raise e
         
-        return fun(current_user_username = current_user_username, *args, **kwargs)
+        return fun(current_user = current_user, *args, **kwargs)
     return foo
 
 
@@ -194,8 +195,8 @@ def add_user():
 @auth_api.get("/whoami")
 @cross_origin(supports_credentials=True)
 @auth_protected
-def whoami(current_user_username):
-    return current_user_username
+def whoami(current_user):
+    return current_user
     
 
 
