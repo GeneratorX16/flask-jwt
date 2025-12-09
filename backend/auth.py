@@ -73,6 +73,13 @@ def generate_access_token(data: dict, expires_delta: timedelta | None = None):
 
 def get_logged_in_user():
     auth_header = request.headers.get('Authorization')
+
+    if not auth_header:
+        raise ValueError(AuthMessage.UNAUTH_MESSAGE)
+    
+    if not auth_header.startswith("Bearer ") or len(auth_header.split(" ")) != 2:
+        raise ValueError(AuthMessage.INVALID_TOKEN)
+
     jwt_token = auth_header.split(" ")[1]
 
     if not auth_header.startswith("Bearer") or not jwt_token:
@@ -84,8 +91,11 @@ def get_logged_in_user():
         jti = payload.get("jti")
         jti_is_blacklisted = bool(r.get(jti))
 
-        if username is None or jti_is_blacklisted: 
+        if username is None: 
            raise ValueError(AuthMessage.TOKEN_EXPIRED)
+        
+        if jti_is_blacklisted:
+            raise ValueError(AuthMessage.TOKEN_REVOKED)
         
     except jwt.InvalidTokenError:
         raise ValueError(AuthMessage.INVALID_TOKEN)
@@ -149,11 +159,14 @@ def revoke_token(token: str):
 
 @auth_api.post("/revoke")
 def revoke_jwt_token():
-    token = request.args.get("token")
 
-    if not token:
+    header = request.headers.get("Authorization")
+
+    if not header or not header.startswith("Bearer "):
         return AuthMessage.INVALID_TOKEN, 400
-    
+
+    token = header.split(" ")[1]
+
     revoke_token(token)
     return AuthMessage.TOKEN_REVOKED, 200
 

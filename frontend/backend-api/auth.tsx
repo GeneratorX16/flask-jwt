@@ -2,7 +2,7 @@ import { CustomEnv } from "@/env";
 import { AUTH_CONSTANTS } from "@/lib/constants";
 
 
-export async function authRequest(relativePath: string, options: RequestInit) {
+export async function authRequest(relativePath: string, options: RequestInit, throwErrorOnAuthFailure: boolean = true) {
     const token = localStorage.getItem(AUTH_CONSTANTS.tokenName);
 
     const res = await fetch(CustomEnv.BACKEND_BASE_URL + relativePath, {
@@ -15,7 +15,7 @@ export async function authRequest(relativePath: string, options: RequestInit) {
     }
     );
 
-    if (!res.ok) {
+    if (throwErrorOnAuthFailure && !res.ok) {
         throw new Error("Authorization failed");
     }
 
