@@ -9,7 +9,7 @@ import math
 from utils import get_redis_connector
 from db import User, db
 from sqlalchemy.exc import IntegrityError
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, jsonify, request
 from functools import wraps
 from uuid import uuid4
 
@@ -17,7 +17,13 @@ import bcrypt
 import jwt
 from datetime import datetime, timedelta, timezone
 
-SECRET_KEY= os.environ.get('JWT_SECRET_KEY')
+SECRET_KEY_1= os.environ.get('JWT_SECRET_KEY_1')
+SECRET_KEY_2= os.environ.get('JWT_SECRET_KEY_2')
+SECRET_KEY_3= os.environ.get('JWT_SECRET_KEY_3')
+
+ACTIVE_KEY = SECRET_KEY_1
+ACTIVE_KID = "1"
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
@@ -67,7 +73,7 @@ def generate_access_token(data: dict, expires_delta: timedelta | None = None):
         "iat": iat
     })
 
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, ACTIVE_KEY, algorithm=ALGORITHM, headers={"kid": ACTIVE_KID})
     return encoded_jwt
 
 
@@ -86,7 +92,7 @@ def get_logged_in_user():
         raise ValueError(AuthMessage.UNAUTH_MESSAGE)
         
     try: 
-        payload = jwt.decode(jwt_token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(jwt_token, ACTIVE_KEY, algorithms=[ALGORITHM])
         username = payload.get("sub")
         jti = payload.get("jti")
         jti_is_blacklisted = bool(r.get(jti))
@@ -146,7 +152,7 @@ def login():
 
 def revoke_token(token: str):
     try: 
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, ACTIVE_KEY, algorithms=[ALGORITHM])
         jti = payload.get("jti")
         exp_ttl: timedelta = datetime.fromtimestamp(payload.get("exp"), tz=timezone.utc) - datetime.now(timezone.utc)
 
