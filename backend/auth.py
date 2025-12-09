@@ -52,7 +52,11 @@ def authenticate_user(username, received_password):
         return False
     
     user = get_user_from_db(username)
-    if not user or not bcrypt.checkpw(received_password.encode("utf-8"), user.password.encode("utf-8")):
+    if not user:
+        bcrypt.checkpw(received_password.encode("utf-8"), "DUMMY".encode("utf-8"))
+        return False
+    
+    if not bcrypt.checkpw(received_password.encode("utf-8"), user.password.encode("utf-8")):
         return False
     
     return user
@@ -106,15 +110,14 @@ def get_logged_in_user():
     except jwt.InvalidTokenError:
         raise ValueError(AuthMessage.INVALID_TOKEN)
     
-    user = get_user_from_db(username)
-    return user
+    return username
 
 def auth_protected(fun):
     @wraps(fun)
     def foo(*args, **kwargs):
-        current_user = None
+        current_user_username = None
         try:
-            current_user = get_logged_in_user()
+            current_user_username = get_logged_in_user()
         except ValueError as e:
             msg = str(e)
             if AuthMessage.INVALID_CREDENTIALS in msg or AuthMessage.INVALID_TOKEN in msg or AuthMessage.TOKEN_EXPIRED in msg or AuthMessage.TOKEN_REVOKED in msg or AuthMessage.UNAUTH_MESSAGE in msg:
@@ -122,7 +125,7 @@ def auth_protected(fun):
             else:
                 raise e
         
-        return fun(current_user = current_user, *args, **kwargs)
+        return fun(current_user_username = current_user_username, *args, **kwargs)
     return foo
 
 
@@ -191,8 +194,8 @@ def add_user():
 @auth_api.get("/whoami")
 @cross_origin(supports_credentials=True)
 @auth_protected
-def whoami(current_user):
-    return current_user.username
+def whoami(current_user_username):
+    return current_user_username
     
 
 
